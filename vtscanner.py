@@ -40,7 +40,7 @@ import tempfile
 
 logging.basicConfig(stream=sys.stdout, format="%(message)s")
 log = logging.getLogger("vt-scanner") # logging.root # or 
-log.setLevel(logging.INFO)
+log.setLevel(logging.WARN)
 
 try:
     import virustotal
@@ -56,7 +56,6 @@ INSTALLER_NAME = sys.argv[1]
 # API_KEY gets filled in later
 API_KEY = ""
 
-
 def main():
     try:
         API_KEY = load_json_file("config.json")['APIKEY']
@@ -69,7 +68,6 @@ def main():
         log.warn(message)
         sys.exit(1)        
 
-
     starttime = time.time()
     # Create a temp dir to install Komodo
     # XXX sent test file with eicar.com to confirm API is responding in a timely
@@ -81,7 +79,7 @@ def main():
         install_Komodo(INSTALLER_NAME, TEMP)
         log.info("Install complete.")
         log.info("Repacking and zipping Komodo files...")
-        zipFilesList = archive_Komodo_intall(tempfoler)
+        zipFilesList = archive_Komodo_intall(TEMP)
         log.info("Zipping complete.")
         log.info("Sending files and retrieving reports...")
         reports = scan_files(zipFilesList)
@@ -115,7 +113,7 @@ def archive_Komodo_intall(tempfolder):
     """Archive the file types wanted into zip files that are no larger than
     34 Mb when zipped.
     Returns a list of the resulting zipped files."""
-    kopath = ["lib\mozilla\"extensions",
+    kopaths = ["lib\mozilla\extensions",
                "lib\mozilla\plugins",
                "lib\sdk",
                "lib\support"]
@@ -132,33 +130,33 @@ def archive_Komodo_intall(tempfolder):
                   "pywintypes27.dll", "pyxpcom.dll", "pyxpcom.manifest",
                   "Scilexer.dll"]
         # First pack and delete Komodo bits
-        for l in kopathtopkg:
+        for l in kopaths:
             walk_n_pack(walkpath, l, komodozip)
             del_file_path(os.path.join(walkpath, l))
         # Now do the single files in Mozilla that are Komodo bits
         # gotta create the mozpath now
         mozabspath = os.path.join(walkpath, mozpath)
         for f in kolist:
-            fpath = os.path.join(mozpath, f)
-            pack(fpath, komodozip, os.path.join(relpath, f))
+            fpath = os.path.join(mozabspath, f)
+            pack(fpath, komodozip, os.path.join(mozpath, f))
             del_file_path(fpath)
         ziplist.append(komodozip)
         
-    with create_zip(os.path.join(TEMP,"mozpython.zip")) as mozpythonzip:            
+    with create_zip(os.path.join(tempfolder,"mozpython.zip")) as mozpythonzip:            
         # Now pack and delete mozPython bits
         # Get the path from that available tuple
         walk_n_pack(walkpath, mozpypath, mozpythonzip)
         del_file_path(os.path.join(walkpath, mozpypath))
         ziplist.append(mozpypath)
         
-    with create_zip(os.path.join(TEMP,"mozilla.zip")) as mozillazip:
+    with create_zip(os.path.join(tempfolder,"mozilla.zip")) as mozillazip:
         # Now we'll pack the mozilla bits.  We dont delete since we don't need to
         # as there are no more embedded bits.
         mozpath = os.path.join(walkpath, mozpath)
         walk_n_pack(walkpath, mozpath, mozillazip)
         ziplist.append(mozillazip)
     
-    with create_zip(os.path.join(TEMP,"python.zip")) as python:   
+    with create_zip(os.path.join(tempfolder,"python.zip")) as python:   
         # and finally the Python bits, don't need to delete them either.
         walk_n_pack(walkpath, pypath, python)
         ziplist.append(python)
