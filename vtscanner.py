@@ -53,7 +53,6 @@ except ImportError as e:
     raise
 
 INSTALLER_NAME = sys.argv[1]
-TEMP = tempfile.mkdtemp(dir=os.getcwd())
 # API_KEY gets filled in later
 API_KEY = ""
 
@@ -61,25 +60,28 @@ API_KEY = ""
 def main():
     try:
         API_KEY = load_json_file("config.json")['APIKEY']
-    except NameError:
-        message = """***Must include a config.json file containing a valid APIKEY***
-Ex. format:
-{
-    "APIKEY": "b987a09c0983002309823e0-thisIsFake-9809887087a097987b9870987098"
-}"""
-        log.error(NameError, message)
-        raise
+    except:
+        message = "Missing config.json file with valid API KEY\n"
+        message += "Ex. format:\n"
+        message += "{\n"
+        message += "\t\"APIKEY\":\"b987a09c0983002309823e0-thisIsFake-9809\"\n"
+        message += "}"
+        log.warn(message)
+        sys.exit(1)        
+
+
     starttime = time.time()
     # Create a temp dir to install Komodo
     # XXX sent test file with eicar.com to confirm API is responding in a timely
     # manner or that server is even running.
     #test_vt_server()
     try:
+        TEMP = tempfile.mkdtemp(dir=os.getcwd())
         log.info("Installing %s in %s...", INSTALLER_NAME, TEMP)  
         install_Komodo(INSTALLER_NAME, TEMP)
         log.info("Install complete.")
         log.info("Repacking and zipping Komodo files...")
-        zipFilesList = archive_Komodo_intall()
+        zipFilesList = archive_Komodo_intall(tempfoler)
         log.info("Zipping complete.")
         log.info("Sending files and retrieving reports...")
         reports = scan_files(zipFilesList)
@@ -109,22 +111,22 @@ def install_Komodo(installername, installpath):
     sub.check_call(["msiexec", "/qb", "/a", installername,
                     "TARGETDIR=" + installpath])
 
-def archive_Komodo_intall():
+def archive_Komodo_intall(tempfolder):
     """Archive the file types wanted into zip files that are no larger than
     34 Mb when zipped.
     Returns a list of the resulting zipped files."""
-     kopath = ["lib\mozilla\"extensions",
-                       "lib\mozilla\plugins",
-                       "lib\sdk",
-                       "lib\support"]
+    kopath = ["lib\mozilla\"extensions",
+               "lib\mozilla\plugins",
+               "lib\sdk",
+               "lib\support"]
     mozpypath = "lib\mozilla\python",
     mozpath = "lib\mozilla"
     pypath = "lib\python"
     ziplist = []
-    walkpath = os.path.join(TEMP,"PFILES\\ActiveState Komodo IDE 8 nightly")
+    walkpath = os.path.join(tempfolder,"PFILES\\ActiveState Komodo IDE 8 nightly")
     
     ### why can't i put stuff like this on multiple lines?? :(
-    with create_zip(os.path.join(TEMP,"komodo.zip")) as komodozip:
+    with create_zip(os.path.join(tempfolder, "komodo.zip")) as komodozip:
         # Komodo files contained in the Mozilla folder
         kolist = ["komodo.exe", "python27.dll", "pythoncom27.dll",
                   "pywintypes27.dll", "pyxpcom.dll", "pyxpcom.manifest",
@@ -135,31 +137,30 @@ def archive_Komodo_intall():
             del_file_path(os.path.join(walkpath, l))
         # Now do the single files in Mozilla that are Komodo bits
         # gotta create the mozpath now
-        mozpath = os.path.join(walkpath, mozpath)
+        mozabspath = os.path.join(walkpath, mozpath)
         for f in kolist:
             fpath = os.path.join(mozpath, f)
-            relpath = os.path.join(*mozpathtopkg[0][0])
-            pack(fpath, komodozip, create_rel_filepath(relpath, f))
+            pack(fpath, komodozip, os.path.join(relpath, f))
             del_file_path(fpath)
         ziplist.append(komodozip)
         
     with create_zip(os.path.join(TEMP,"mozpython.zip")) as mozpythonzip:            
         # Now pack and delete mozPython bits
         # Get the path from that available tuple
-        walk_n_pack(walkpath, mozpypathtopkg[0])
+        walk_n_pack(walkpath, mozpypath, mozpythonzip)
         del_file_path(os.path.join(walkpath, mozpypath))
-        ziplist.append(mozpypathtopkg)
+        ziplist.append(mozpypath)
         
     with create_zip(os.path.join(TEMP,"mozilla.zip")) as mozillazip:
         # Now we'll pack the mozilla bits.  We dont delete since we don't need to
         # as there are no more embedded bits.
         mozpath = os.path.join(walkpath, mozpath)
-        walk_n_pack(walkpath, mozpath)
+        walk_n_pack(walkpath, mozpath, mozillazip)
         ziplist.append(mozillazip)
     
     with create_zip(os.path.join(TEMP,"python.zip")) as python:   
         # and finally the Python bits, don't need to delete them either.
-        walk_n_pack(walkpath, pypath)
+        walk_n_pack(walkpath, pypath, python)
         ziplist.append(python)
     
     return ziplist
@@ -170,16 +171,7 @@ def walk_n_pack(basepath, localpath, zipfile):
         for f in files:
             fpath = os.path.join(d, f)
             # add arcname so files have a relative path to the lib folder
-            pack(fpath, localpath, create_rel_filepath(localpath, f))
-
-def create_rel_filepath(relpath, f):
-    # had to separate the two relpath creations in to two lines because of
-    # this:
-    # File "C:\Users\careyh\VT-scanner\vtscanner.py", line 140
-    # relpath = os.path.join(*l[0], f)
-    # SyntaxError: only named arguments may follow *expression
-    relpath = os.path.join(relpath)
-    return os.path.join(relpath, f)
+            pack(fpath, zipfile, os.path.join(localpath, f))
 
 def scan_files(filelist):
     v = virustotal.VirusTotal(API_KEY)
