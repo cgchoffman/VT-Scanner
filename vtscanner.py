@@ -38,6 +38,15 @@ import datetime
 import logging
 import tempfile
 
+from argparse import ArgumentParser
+usage = "Usage: vtscanner.py [options] Komodo-IDE-x.y.z-xxxxx.msi"
+parser = ArgumentParser()
+parser.add_argument("-t", "--timeout", nargs=1, default=900, action='store',
+                  help="Set the timeout for script runtime, in seconds.",
+                  dest='TIME_OUT')
+parser.add_argument("installer", help="Installer to be scanned.")
+options = parser.parse_args()
+
 logging.basicConfig(stream=sys.stdout, format="%(message)s")
 log = logging.getLogger("vt-scanner") # logging.root # or 
 log.setLevel(logging.WARN)
@@ -52,7 +61,8 @@ except ImportError as e:
     log.error("https://github.com/Gawen/virustotal/pull/8")
     raise
 
-INSTALLER_NAME = sys.argv[1]
+INSTALLER_NAME = options.installer
+    
 # API_KEY gets filled in later
 API_KEY = ""
 
@@ -173,18 +183,23 @@ def walk_n_pack(basepath, localpath, zipfile):
 
 def scan_files(filelist):
     v = virustotal.VirusTotal(API_KEY)
+    tostart = time.time()
     reports = []
-    for f in filelist:
-        # submit the files
-        log.info("Sending %s for scan...", f.filename)
-        report = v.scan(f.filename)
-        log.info("File sent.  Report pending: %s", report)
-        log.info("   Waiting for report...")
-        while not report.done:
-            log.info(".")
-            report.join(120)
-        reports.append(report)
-    return reports
+    while time.time() - tostart <= options.TIME_OUT:
+        for f in filelist:
+            # submit the files
+            log.info("Sending %s for scan...", f.filename)
+            report = v.scan(f.filename)
+            log.info("File sent.  Report pending: %s", report)
+            log.info("   Waiting for report...")
+            while not report.done:
+                log.info(".")
+                report.join(60)
+            reports.append(report)
+        return reports
+    log.warn("Timeout reached in vtscanner.scan_files.")
+    log.warn("VIRUS SCAN NOT COMPLETE.")
+    sys.exit(0)
 
 def print_report(reports, files):
     zipnum = 0
