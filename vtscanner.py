@@ -63,9 +63,12 @@ except ImportError:
     
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 INSTALLER_NAME = options.installer
     
 =======
+=======
+>>>>>>> master
 # API_KEY gets filled in later
 API_KEY = ""
 
@@ -181,11 +184,16 @@ def walk_n_pack(basepath, localpath, zipfile):
             pack(fpath, zipfile, os.path.join(localpath, f))
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def scan_files(filelist):
     v = virustotal.VirusTotal(API_KEY)
     tostart = time.time()
 =======
 def scan_files(filelist,apikey):
+=======
+def scan_files(filelist,apikey):
+    v = virustotal.VirusTotal(apikey)
+>>>>>>> master
     reports = []
     while time.time() - tostart <= options.TIME_OUT:
         for f in filelist:
