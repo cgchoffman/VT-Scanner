@@ -63,8 +63,8 @@ except ImportError:
     log.error("https://github.com/Gawen/virustotal/pull/8")
     sys.exit(1)
     
-
 INSTALLER_NAME = options.installer
+
 # API_KEY gets filled in later
 API_KEY = ""
 
