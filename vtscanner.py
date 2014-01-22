@@ -17,7 +17,7 @@ Positive report detected for batch-5-IDE-8.5.3-83203.zip.  Queuing for print...
 
 Example start command:
 
- > python vtscanner Komodo-IDE-x.y.z-xxxxx.msi
+ > python vtscanner.py Komodo-IDE-x.y.z-xxxxx.msi
 
 Then will log.info(out the resulting malicious reports.
 
@@ -49,20 +49,23 @@ options = parser.parse_args()
 
 logging.basicConfig(stream=sys.stdout, format="%(message)s")
 log = logging.getLogger("vt-scanner") # logging.root # or 
-log.setLevel(logging.WARN)
+log.setLevel(logging.DEBUG)
 
 try:
     import virustotal
-except ImportError as e:
+except ImportError:
     log.error("There was an error importing package 'virustotal'.")
     log.error("Clones it from https://github.com/cgchoffman/virustotal.")
     log.error("See README.md for install instructions.")
     log.error("Forked original repo as it is broken for Windows; See Issue 8: ")
     log.error("https://github.com/Gawen/virustotal/pull/8")
-    raise
+    sys.exit(1)
+    
 
+<<<<<<< HEAD
 INSTALLER_NAME = options.installer
     
+=======
 # API_KEY gets filled in later
 API_KEY = ""
 
@@ -75,13 +78,10 @@ def main():
         message += "{\n"
         message += "\t\"APIKEY\":\"b987a09c0983002309823e0-thisIsFake-9809\"\n"
         message += "}"
-        log.warn(message)
+        log.error(message)
         sys.exit(1)        
 
     starttime = time.time()
-    # Create a temp dir to install Komodo
-    # XXX sent test file with eicar.com to confirm API is responding in a timely
-    # manner or that server is even running.
     #test_vt_server()
     try:
         TEMP = tempfile.mkdtemp(dir=os.getcwd())
@@ -92,7 +92,7 @@ def main():
         zipFilesList = archive_Komodo_intall(TEMP)
         log.info("Zipping complete.")
         log.info("Sending files and retrieving reports...")
-        reports = scan_files(zipFilesList)
+        reports = scan_files(zipFilesList, API_KEY)
         log.info("Printing Reports...\n")
         print_report(reports, zipFilesList)
    
@@ -127,7 +127,7 @@ def archive_Komodo_intall(tempfolder):
                "lib\mozilla\plugins",
                "lib\sdk",
                "lib\support"]
-    mozpypath = "lib\mozilla\python",
+    mozpypath = "lib\mozilla\python"
     mozpath = "lib\mozilla"
     pypath = "lib\python"
     ziplist = []
@@ -157,12 +157,11 @@ def archive_Komodo_intall(tempfolder):
         # Get the path from that available tuple
         walk_n_pack(walkpath, mozpypath, mozpythonzip)
         del_file_path(os.path.join(walkpath, mozpypath))
-        ziplist.append(mozpypath)
+        ziplist.append(mozpythonzip)
         
     with create_zip(os.path.join(tempfolder,"mozilla.zip")) as mozillazip:
         # Now we'll pack the mozilla bits.  We dont delete since we don't need to
         # as there are no more embedded bits.
-        mozpath = os.path.join(walkpath, mozpath)
         walk_n_pack(walkpath, mozpath, mozillazip)
         ziplist.append(mozillazip)
     
@@ -181,9 +180,12 @@ def walk_n_pack(basepath, localpath, zipfile):
             # add arcname so files have a relative path to the lib folder
             pack(fpath, zipfile, os.path.join(localpath, f))
 
+<<<<<<< HEAD
 def scan_files(filelist):
     v = virustotal.VirusTotal(API_KEY)
     tostart = time.time()
+=======
+def scan_files(filelist,apikey):
     reports = []
     while time.time() - tostart <= options.TIME_OUT:
         for f in filelist:
@@ -203,7 +205,7 @@ def scan_files(filelist):
 
 def print_report(reports, files):
     zipnum = 0
-    for r in reports:
+    for report in reports:
         if report.positives == 0:
             print log.info("No virus found in %s.", files[zipnum])
         else:
