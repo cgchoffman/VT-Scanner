@@ -39,11 +39,13 @@ import logging
 import tempfile
 
 from argparse import ArgumentParser
-usage = "Usage: vtscanner.py [options] Komodo-IDE-x.y.z-xxxxx.msi"
 parser = ArgumentParser()
 parser.add_argument("-t", "--timeout", nargs=1, default=900, action='store',
                   help="Set the timeout for script runtime, in seconds.",
                   dest='TIME_OUT')
+# decided not to add a "remove timeout" option as this would probably never get
+# touched in the build process and if the reports are ever taking more than 15
+# minutes then scan should just stop.
 parser.add_argument("installer", help="Installer to be scanned.")
 options = parser.parse_args()
 
@@ -62,13 +64,7 @@ except ImportError:
     sys.exit(1)
     
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 INSTALLER_NAME = options.installer
-    
-=======
-=======
->>>>>>> master
 # API_KEY gets filled in later
 API_KEY = ""
 
@@ -79,7 +75,7 @@ def main():
         message = "Missing config.json file with valid API KEY\n"
         message += "Ex. format:\n"
         message += "{\n"
-        message += "\t\"APIKEY\":\"b987a09c0983002309823e0-thisIsFake-9809\"\n"
+        message += "\t\"APIKEY\":\"b987a09c0983002309823e0-thisisfake-9809\"\n"
         message += "}"
         log.error(message)
         sys.exit(1)        
@@ -88,15 +84,9 @@ def main():
     #test_vt_server()
     try:
         TEMP = tempfile.mkdtemp(dir=os.getcwd())
-        log.info("Installing %s in %s...", INSTALLER_NAME, TEMP)  
         install_Komodo(INSTALLER_NAME, TEMP)
-        log.info("Install complete.")
-        log.info("Repacking and zipping Komodo files...")
         zipFilesList = archive_Komodo_intall(TEMP)
-        log.info("Zipping complete.")
-        log.info("Sending files and retrieving reports...")
-        reports = scan_files(zipFilesList, API_KEY)
-        log.info("Printing Reports...\n")
+        reports = scan_files(zipFilesList)
         print_report(reports, zipFilesList)
    
     except Exception as e:
@@ -118,14 +108,17 @@ def load_json_file(jsonFile):
         return json.load(fileData)
  
 def install_Komodo(installername, installpath):
+    log.info("Installing %s in %s...", INSTALLER_NAME, installpath)  
     import subprocess as sub
     sub.check_call(["msiexec", "/qb", "/a", installername,
                     "TARGETDIR=" + installpath])
+    log.info("Install complete.")
 
 def archive_Komodo_intall(tempfolder):
     """Archive the file types wanted into zip files that are no larger than
     34 Mb when zipped.
     Returns a list of the resulting zipped files."""
+    log.info("Repacking and zipping Komodo files...")
     kopaths = ["lib\mozilla\extensions",
                "lib\mozilla\plugins",
                "lib\sdk",
@@ -134,7 +127,13 @@ def archive_Komodo_intall(tempfolder):
     mozpath = "lib\mozilla"
     pypath = "lib\python"
     ziplist = []
-    walkpath = os.path.join(tempfolder,"PFILES\\ActiveState Komodo IDE 8 nightly")
+    appendedPath = ""
+    for root, dirs, files in os.walk(tempfolder):
+        for d in dirs:
+            if d == "PFILES" or d.find("ActiveState Komodo") > -1:
+                appendedPath = os.path.join(appendedPath, d)
+
+    walkpath = os.path.join(tempfolder,appendedPath)
     
     ### why can't i put stuff like this on multiple lines?? :(
     with create_zip(os.path.join(tempfolder, "komodo.zip")) as komodozip:
@@ -144,7 +143,7 @@ def archive_Komodo_intall(tempfolder):
                   "Scilexer.dll"]
         # First pack and delete Komodo bits
         for l in kopaths:
-            walk_n_pack(walkpath, l, komodozip)
+            walk_and_pack(walkpath, l, komodozip)
             del_file_path(os.path.join(walkpath, l))
         # Now do the single files in Mozilla that are Komodo bits
         # gotta create the mozpath now
@@ -158,24 +157,29 @@ def archive_Komodo_intall(tempfolder):
     with create_zip(os.path.join(tempfolder,"mozpython.zip")) as mozpythonzip:            
         # Now pack and delete mozPython bits
         # Get the path from that available tuple
-        walk_n_pack(walkpath, mozpypath, mozpythonzip)
+        walk_and_pack(walkpath, mozpypath, mozpythonzip)
         del_file_path(os.path.join(walkpath, mozpypath))
         ziplist.append(mozpythonzip)
         
     with create_zip(os.path.join(tempfolder,"mozilla.zip")) as mozillazip:
         # Now we'll pack the mozilla bits.  We dont delete since we don't need to
         # as there are no more embedded bits.
-        walk_n_pack(walkpath, mozpath, mozillazip)
+        mozpath = os.path.join(walkpath, mozpath)
+        walk_and_pack(walkpath, mozpath, mozillazip)
         ziplist.append(mozillazip)
     
     with create_zip(os.path.join(tempfolder,"python.zip")) as python:   
         # and finally the Python bits, don't need to delete them either.
-        walk_n_pack(walkpath, pypath, python)
+        walk_and_pack(walkpath, pypath, python)
         ziplist.append(python)
-    
+    log.info("Zipping complete.")
     return ziplist
 
-def walk_n_pack(basepath, localpath, zipfile):
+def walk_and_pack(basepath, localpath, zipfile):
+    """Takes a basepath to start walking down from.
+    Takes a "localpath" use is relative to the installed folder.  This makes
+    file paths more relastic when unpacking the zip.
+    Takes a zipfile to fill with files."""
     rootpath = os.path.join(basepath, localpath)
     for d, dirs, files in os.walk(rootpath):
         for f in files:
@@ -183,17 +187,10 @@ def walk_n_pack(basepath, localpath, zipfile):
             # add arcname so files have a relative path to the lib folder
             pack(fpath, zipfile, os.path.join(localpath, f))
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-def scan_files(filelist):
+def scan_files(filelist,apikey):
+    log.info("Sending files and retrieving reports...")
     v = virustotal.VirusTotal(API_KEY)
     tostart = time.time()
-=======
-def scan_files(filelist,apikey):
-=======
-def scan_files(filelist,apikey):
-    v = virustotal.VirusTotal(apikey)
->>>>>>> master
     reports = []
     while time.time() - tostart <= options.TIME_OUT:
         for f in filelist:
@@ -206,12 +203,14 @@ def scan_files(filelist,apikey):
                 log.info(".")
                 report.join(60)
             reports.append(report)
+        log.info("All reports recieved.")
         return reports
     log.warn("Timeout reached in vtscanner.scan_files.")
     log.warn("VIRUS SCAN NOT COMPLETE.")
     sys.exit(0)
 
 def print_report(reports, files):
+    log.info("Printing Reports...\n")
     zipnum = 0
     for report in reports:
         if report.positives == 0:
