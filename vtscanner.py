@@ -86,7 +86,7 @@ def main():
         TEMP = tempfile.mkdtemp(dir=os.getcwd())
         install_Komodo(INSTALLER_NAME, TEMP)
         zipFilesList = archive_Komodo_intall(TEMP)
-        reports = scan_files(zipFilesList)
+        reports = scan_files(zipFilesList, API_KEY)
         print_report(reports, zipFilesList)
    
     except Exception as e:
@@ -112,7 +112,7 @@ def install_Komodo(installername, installpath):
     import subprocess as sub
     sub.check_call(["msiexec", "/qb", "/a", installername,
                     "TARGETDIR=" + installpath])
-    log.info("Install complete.")
+    log.info("Install complete.\n")
 
 def archive_Komodo_intall(tempfolder):
     """Archive the file types wanted into zip files that are no larger than
@@ -172,7 +172,7 @@ def archive_Komodo_intall(tempfolder):
         # and finally the Python bits, don't need to delete them either.
         walk_and_pack(walkpath, pypath, python)
         ziplist.append(python)
-    log.info("Zipping complete.")
+    log.info("Zipping complete.\n")
     return ziplist
 
 def walk_and_pack(basepath, localpath, zipfile):
@@ -187,27 +187,31 @@ def walk_and_pack(basepath, localpath, zipfile):
             # add arcname so files have a relative path to the lib folder
             pack(fpath, zipfile, os.path.join(localpath, f))
 
-def scan_files(filelist,apikey):
+def scan_files(filelist, apikey):
     log.info("Sending files and retrieving reports...")
-    v = virustotal.VirusTotal(API_KEY)
+    v = virustotal.VirusTotal(apikey)
     tostart = time.time()
     reports = []
-    while time.time() - tostart <= options.TIME_OUT:
-        for f in filelist:
-            # submit the files
-            log.info("Sending %s for scan...", f.filename)
-            report = v.scan(f.filename)
-            log.info("File sent.  Report pending: %s", report)
-            log.info("   Waiting for report...")
-            while not report.done:
+    for f in filelist:
+        # submit the files
+        basename = os.path.basename(f.filename)
+        log.info("Sending %s for scan...", basename)
+        report = v.scan(f.filename)
+        log.info("File sent.  Report pending: %s", report)
+        log.info("   Waiting for report...")
+        dtime = time.time() - tostart
+        while not report.done:
+            if  dtime <= int(options.TIME_OUT[0]):
                 log.info(".")
                 report.join(60)
-            reports.append(report)
-        log.info("All reports recieved.")
-        return reports
-    log.warn("Timeout reached in vtscanner.scan_files.")
-    log.warn("VIRUS SCAN NOT COMPLETE.")
-    sys.exit(0)
+            else:
+                log.warn("Timeout reached in vtscanner.scan_files.")
+                log.warn("VIRUS SCAN NOT COMPLETE.")
+                sys.exit(0)
+        log.info("Report recieved for %s\n", basename)
+        reports.append(report)
+    log.info("All reports recieved.\n")
+    return reports
 
 def print_report(reports, files):
     log.info("Printing Reports...\n")
@@ -230,14 +234,15 @@ def get_build_name(filename):
     """ Retrieve the full version of the installer, eg. Edit-x.y.z-xxxxx"""
     return filename[filename.find("-") + 1:filename.rfind(".")]
 
-def pack(path, zipfile, arcname):
+def pack(path, zfile, arcname):
     """ Add file to archive"""
     # This doesn't work.  Needs to be zipfile.ZipInfo or something.
-    #os.stat(path).st_mtime = 0
-    #os.stat(path).st_atime = 0
-    #os.stat(path).st_ctime = 0
-    zipfile.write(path, arcname)
-    
+    with open(path, "rb") as f:
+        # ValueError: ZIP does not support timestamps before 1980
+        # http://docs.python.org/3/library/zipfile.html#zipfile.ZipInfo
+        info = zipfile.ZipInfo(arcname, date_time=(1983, 1, 1, 1, 1, 1))
+        zfile.writestr(info, f.read())
+    5
 def create_zip(name):
     """Create an archive file of the name "name"."""
     try:
