@@ -249,8 +249,12 @@ def pack(path, zfile, arcname):
     with open(path, "rb") as f:
         # ValueError: ZIP does not support timestamps before 1980
         # http://docs.python.org/3/library/zipfile.html#zipfile.ZipInfo
+        try:
+            mode = zipfile.ZIP_DEFLATED
+        except: 
+            mode = zipfile.ZIP_STORED
         info = zipfile.ZipInfo(arcname, date_time=(1983, 1, 1, 1, 1, 1))
-        zfile.writestr(info, f.read())
+        zfile.writestr(info, f.read(), mode)
     
 def create_zip(name):
     """Create an archive file of the name "name"."""
