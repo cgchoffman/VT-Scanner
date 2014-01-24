@@ -37,6 +37,10 @@ import time
 import datetime
 import logging
 import tempfile
+import json
+import subprocess
+import shutil
+import StringIO
 
 from argparse import ArgumentParser
 parser = ArgumentParser()
@@ -65,21 +69,19 @@ except ImportError:
     
 INSTALLER_NAME = options.installer
 
-# API_KEY gets filled in later
-API_KEY = ""
-
 def main():
     try:
-        API_KEY = load_json_file("config.json")['APIKEY']
-    except:
+        with open("config.json", 'r') as filedata:
+            API_KEY = json.load(filedata)['APIKEY']
+    except Exception as e:
         message = "Missing config.json file with valid API KEY\n"
         message += "Ex. format:\n"
         message += "{\n"
         message += "\t\"APIKEY\":\"b987a09c0983002309823e0-thisisfake-9809\"\n"
         message += "}"
-        log.error(message)
+        log.error(e)
         sys.exit(1)        
-
+    test_vt_api(API_KEY)
     starttime = time.time()
     #test_vt_server()
     try:
@@ -102,15 +104,22 @@ def main():
         log.info("Elapsed time: %s", str(endtime - starttime))
         log.info("done!")
 
-def load_json_file(jsonFile):
-    import json
-    with open(jsonFile, 'r') as fileData:
-        return json.load(fileData)
- 
+def test_vt_api(apikey):
+    log.info("Testing VirusTotal API server...")
+    v = virustotal.VirusTotal(apikey)
+    try:
+        report = v.get(StringIO.StringIO("X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"))
+        if report.positives:
+            log.info("VirusTotal API seems alive.  LET'S DO THIS!")
+        else:
+            raise
+    except Exception as e:
+        log.error("VirustTotal API is not repsonding.  Virus scan cannot be completed:\n %s", e)
+        sys.exit(1)
+    
 def install_Komodo(installername, installpath):
     log.info("Installing %s in %s...", INSTALLER_NAME, installpath)  
-    import subprocess as sub
-    sub.check_call(["msiexec", "/qb", "/a", installername,
+    subprocess.check_call(["msiexec", "/qb", "/a", installername,
                     "TARGETDIR=" + installpath])
     log.info("Install complete.\n")
 
@@ -182,21 +191,21 @@ def walk_and_pack(basepath, localpath, zipfile):
     Takes a zipfile to fill with files."""
     rootpath = os.path.join(basepath, localpath)
     for d, dirs, files in os.walk(rootpath):
-        for f in files:
-            fpath = os.path.join(d, f)
+        for kfile in files:
+            fpath = os.path.join(d, kfile)
             # add arcname so files have a relative path to the lib folder
-            pack(fpath, zipfile, os.path.join(localpath, f))
+            pack(fpath, zipfile, os.path.join(localpath, kfile))
 
 def scan_files(filelist, apikey):
     log.info("Sending files and retrieving reports...")
     v = virustotal.VirusTotal(apikey)
     tostart = time.time()
     reports = []
-    for f in filelist:
+    for zfile in filelist:
         # submit the files
-        basename = os.path.basename(f.filename)
+        basename = os.path.basename(zfile.filename)
         log.info("Sending %s for scan...", basename)
-        report = v.scan(f.filename)
+        report = v.scan(zfile.filename)
         log.info("File sent.  Report pending: %s", report)
         log.info("   Waiting for report...")
         dtime = time.time() - tostart
@@ -242,7 +251,7 @@ def pack(path, zfile, arcname):
         # http://docs.python.org/3/library/zipfile.html#zipfile.ZipInfo
         info = zipfile.ZipInfo(arcname, date_time=(1983, 1, 1, 1, 1, 1))
         zfile.writestr(info, f.read())
-    5
+    
 def create_zip(name):
     """Create an archive file of the name "name"."""
     try:
@@ -252,7 +261,6 @@ def create_zip(name):
     return contextlib.closing(zipfile.ZipFile(name, "a", mode))
 
 def del_file_path(fileORpath):
-    import shutil
     try:
         if os.path.isfile(fileORpath):
             os.remove(fileORpath)
