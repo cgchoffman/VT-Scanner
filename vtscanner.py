@@ -173,7 +173,6 @@ def archive_Komodo_intall(tempfolder):
     with create_zip(os.path.join(tempfolder,"mozilla.zip")) as mozillazip:
         # Now we'll pack the mozilla bits.  We dont delete since we don't need to
         # as there are no more embedded bits.
-        mozpath = os.path.join(walkpath, mozpath)
         walk_and_pack(walkpath, mozpath, mozillazip)
         ziplist.append(mozillazip)
     
@@ -208,9 +207,9 @@ def scan_files(filelist, apikey):
         report = v.scan(zfile.filename)
         log.info("File sent.  Report pending: %s", report)
         log.info("   Waiting for report...")
-        dtime = time.time() - tostart
+        timedelta = time.time() - tostart
         while not report.done:
-            if  dtime <= int(options.TIME_OUT[0]):
+            if  timedelta <= options.TIME_OUT:
                 log.info(".")
                 report.join(60)
             else:
@@ -274,6 +273,7 @@ def del_file_path(fileORpath):
             # the install folder after removing it.
             # ref: http://stackoverflow.com/questions/10861403/cant-delete-test-folder-in-windows-7
             shutil.rmtree(fileORpath)
+            log.info("Cleaning up %s.", fileORpath)
     except OSError as e:
         log.info("Couldn't delete %s: %s", fileORpath, e)
 
