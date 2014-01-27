@@ -44,7 +44,7 @@ import StringIO
 
 from argparse import ArgumentParser
 parser = ArgumentParser()
-parser.add_argument("-t", "--timeout", nargs=1, default=900, action='store',
+parser.add_argument("-t", "--timeout", nargs=1, default=1200, action='store',
                   help="Set the timeout for script runtime, in seconds.",
                   dest='TIME_OUT')
 # decided not to add a "remove timeout" option as this would probably never get
@@ -128,10 +128,11 @@ def archive_Komodo_intall(tempfolder):
     34 Mb when zipped.
     Returns a list of the resulting zipped files."""
     log.info("Repacking and zipping Komodo files...")
-    kopaths = ["lib\mozilla\extensions",
+    kopaths = ["lib\mozilla\components",
+               "lib\mozilla\extensions",
                "lib\mozilla\plugins",
-               "lib\sdk",
                "lib\support"]
+    kosdkpath = "lib\sdk"
     mozpypath = "lib\mozilla\python"
     mozpath = "lib\mozilla"
     pypath = "lib\python"
@@ -162,7 +163,14 @@ def archive_Komodo_intall(tempfolder):
             pack(fpath, komodozip, os.path.join(mozpath, f))
             del_file_path(fpath)
         ziplist.append(komodozip)
-        
+    
+    with create_zip(os.path.join(tempfolder,"komodo-sdk.zip")) as kosdkzip:            
+        # Now pack and delete mozPython bits
+        # Get the path from that available tuple
+        walk_and_pack(walkpath, kosdkpath, kosdkzip)
+        del_file_path(os.path.join(walkpath, mozpypath))
+        ziplist.append(kosdkzip)
+    
     with create_zip(os.path.join(tempfolder,"mozpython.zip")) as mozpythonzip:            
         # Now pack and delete mozPython bits
         # Get the path from that available tuple
@@ -192,13 +200,16 @@ def walk_and_pack(basepath, localpath, zipfile):
     for d, dirs, files in os.walk(rootpath):
         for kfile in files:
             fpath = os.path.join(d, kfile)
+            # append the subdir portion of to the localpath to maintain dir
+            # structure in zip
+            fulllocalpath = os.path.join(localpath, d[len(rootpath) + 1:])
             # add arcname so files have a relative path to the lib folder
-            pack(fpath, zipfile, os.path.join(localpath, kfile))
+            pack(fpath, zipfile, os.path.join(fulllocalpath, kfile))
 
 def scan_files(filelist, apikey):
     log.info("Sending files and retrieving reports...")
     v = virustotal.VirusTotal(apikey)
-    tostart = time.time()
+    startscantime = time.time()
     reports = []
     for zfile in filelist:
         # submit the files
@@ -207,7 +218,7 @@ def scan_files(filelist, apikey):
         report = v.scan(zfile.filename)
         log.info("File sent.  Report pending: %s", report)
         log.info("   Waiting for report...")
-        timedelta = time.time() - tostart
+        timedelta = time.time() - startscantime
         while not report.done:
             if  timedelta <= options.TIME_OUT:
                 log.info(".")
@@ -226,7 +237,7 @@ def print_report(reports, files):
     zipnum = 0
     for report in reports:
         if report.positives == 0:
-            print log.info("No virus found in %s.", files[zipnum])
+            print log.info("No virus found in %s.", files[zipnum].filename)
         else:
             log.info("\n***VIRUS DETECTED IN %s***\n", files[zipnum])
             for antivirus, malware in report:
