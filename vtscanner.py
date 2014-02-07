@@ -45,8 +45,10 @@ import StringIO
 from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument("-t", "--timeout", nargs=1, default=1200, action='store',
-                  help="Set the timeout for script runtime, in seconds.",
-                  dest='TIME_OUT')
+                    help="Set the timeout for script runtime, in seconds.",
+                    dest='TIME_OUT')
+parser.add_argument("-v", "--verbose", action="store_const",
+                    default=logging.INFO, const=logging.DEBUG, dest="verbosity")
 # decided not to add a "remove timeout" option as this would probably never get
 # touched in the build process and if the reports are ever taking more than 15
 # minutes then scan should just stop.
@@ -55,7 +57,7 @@ options = parser.parse_args()
 
 logging.basicConfig(stream=sys.stdout, format="%(message)s")
 log = logging.getLogger("vt-scanner") # logging.root # or 
-log.setLevel(logging.DEBUG)
+log.setLevel(options.verbosity)
 
 try:
     import virustotal
@@ -85,7 +87,8 @@ def main():
     starttime = time.time()
     #test_vt_server()
     try:
-        TEMP = tempfile.mkdtemp(dir=os.getcwd())
+        # Makes it easier to debug packages  when they are right there; getcwd()
+        TEMP = tempfile.mkdtemp()#dir=os.getcwd())
         install_Komodo(INSTALLER_NAME, TEMP)
         zipFilesList = archive_Komodo_intall(TEMP)
         reports = scan_files(zipFilesList, API_KEY)
@@ -112,7 +115,8 @@ def test_vt_api(apikey):
         if report.positives:
             log.info("VirusTotal API seems alive.  LET'S DO THIS!")
         else:
-            raise
+            log.error("Could not reach VirusTotal servers.  Quiting.")
+            sys.exit(1)
     except Exception as e:
         log.error("VirustTotal API is not repsonding.  Virus scan cannot be completed:\n %s", e)
         sys.exit(1)
