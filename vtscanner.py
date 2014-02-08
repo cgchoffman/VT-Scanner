@@ -21,13 +21,17 @@ Example start command:
 
 Then will log.info(out the resulting malicious reports.
 
-No human interaction is necessary other than starting it."""
+No human interaction is necessary other than starting it.
 
-"""***Must include a config.json file containing a valid APIKEY***
+***Must include a config.json file containing a valid APIKEY***
 Ex. format:
 {
     "APIKEY": "b987a09c0983002309823e0-thisIsFake-9809887087a097987b9870987098"
-}"""
+}
+
+Special case exit for this script is sys.exit(2) which means a virus was detect.
+
+"""
 
 import contextlib
 import os
@@ -45,19 +49,19 @@ import StringIO
 from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument("-t", "--timeout", nargs=1, default=1200, action='store',
-                    help="Set the timeout for script runtime, in seconds.",
-                    dest='TIME_OUT')
-parser.add_argument("-v", "--verbose", action="store_const",
-                    default=logging.INFO, const=logging.DEBUG, dest="verbosity")
+                  help="Set the timeout for script runtime, in seconds.",
+                  dest='TIME_OUT')
 # decided not to add a "remove timeout" option as this would probably never get
 # touched in the build process and if the reports are ever taking more than 15
 # minutes then scan should just stop.
 parser.add_argument("installer", help="Installer to be scanned.")
 options = parser.parse_args()
 
+# 
 logging.basicConfig(stream=sys.stdout, format="%(message)s")
 log = logging.getLogger("vt-scanner") # logging.root # or 
-log.setLevel(options.verbosity)
+log.setLevel(logging.INFO)
+#log.setLevel(logging.DEBUG)
 
 try:
     import virustotal
@@ -72,6 +76,7 @@ except ImportError:
 INSTALLER_NAME = options.installer
 
 def main():
+    """Exit code 2 means a virus or malware is detected."""
     try:
         with open("config.json", 'r') as filedata:
             API_KEY = json.load(filedata)['APIKEY']
@@ -87,8 +92,7 @@ def main():
     starttime = time.time()
     #test_vt_server()
     try:
-        # Makes it easier to debug packages  when they are right there; getcwd()
-        TEMP = tempfile.mkdtemp()#dir=os.getcwd())
+        TEMP = tempfile.mkdtemp(dir=os.getcwd())
         install_Komodo(INSTALLER_NAME, TEMP)
         zipFilesList = archive_Komodo_intall(TEMP)
         reports = scan_files(zipFilesList, API_KEY)
@@ -108,30 +112,32 @@ def main():
         log.info("done!")
 
 def test_vt_api(apikey):
-    log.info("Testing VirusTotal API server...")
+    """Send up a test "scan" request to the VT api to make sure it's listening"""
+    log.debug("Testing VirusTotal API server...")
     v = virustotal.VirusTotal(apikey)
     try:
         report = v.get(StringIO.StringIO("X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"))
         if report.positives:
-            log.info("VirusTotal API seems alive.  LET'S DO THIS!")
+            log.debug("VirusTotal API seems alive.  LET'S DO THIS!")
         else:
-            log.error("Could not reach VirusTotal servers.  Quiting.")
-            sys.exit(1)
+            raise
     except Exception as e:
         log.error("VirustTotal API is not repsonding.  Virus scan cannot be completed:\n %s", e)
         sys.exit(1)
     
 def install_Komodo(installername, installpath):
+    """Install Komodo...yep"""
     log.info("Installing %s in %s...", INSTALLER_NAME, installpath)  
     subprocess.check_call(["msiexec", "/qb", "/a", installername,
                     "TARGETDIR=" + installpath])
-    log.info("Install complete.\n")
+    log.debug("Install complete.\n")
 
 def archive_Komodo_intall(tempfolder):
-    """Archive the file types wanted into zip files that are no larger than
-    34 Mb when zipped.
-    Returns a list of the resulting zipped files."""
-    log.info("Repacking and zipping Komodo files...")
+    """Break Komodo install in to smaller pieces to be shipped to VirusTotal.
+    You can add another package by specifiying a new path below, then use the
+    komodo-sdk.zip section as a basical example of the steps then needed.
+    """
+    log.info("Repacking and zipping Komodo files...\n")
     kopaths = ["lib\mozilla\components",
                "lib\mozilla\extensions",
                "lib\mozilla\plugins",
@@ -149,7 +155,8 @@ def archive_Komodo_intall(tempfolder):
 
     walkpath = os.path.join(tempfolder,appendedPath)
     
-    ### why can't i put stuff like this on multiple lines?? :(
+    # Komodo.zip is special as it had pieces all over the install.  Must pack
+    # them first then remove them from those other areas such as mozilla folder
     with create_zip(os.path.join(tempfolder, "komodo.zip")) as komodozip:
         # Komodo files contained in the Mozilla folder
         kolist = ["komodo.exe", "python27.dll", "pythoncom27.dll",
@@ -179,6 +186,7 @@ def archive_Komodo_intall(tempfolder):
         # Now pack and delete mozPython bits
         # Get the path from that available tuple
         walk_and_pack(walkpath, mozpypath, mozpythonzip)
+        #requires a deletion or else it would be added to the mozilla package
         del_file_path(os.path.join(walkpath, mozpypath))
         ziplist.append(mozpythonzip)
         
@@ -211,16 +219,21 @@ def walk_and_pack(basepath, localpath, zipfile):
             pack(fpath, zipfile, os.path.join(fulllocalpath, kfile))
 
 def scan_files(filelist, apikey):
+    """ Send files for scanning.  WIll return immediately if file hash matches
+    previous run file hash with a report for that previous file.  Uses default
+    timeout of 1200 secs or whatever was passed in with the -t option.  Compiles
+    a list of reports to print later"""
     log.info("Sending files and retrieving reports...")
     v = virustotal.VirusTotal(apikey)
     startscantime = time.time()
     reports = []
+    log.info("Sending files to be scanned...\n")
     for zfile in filelist:
         # submit the files
         basename = os.path.basename(zfile.filename)
-        log.info("Sending %s for scan...", basename)
+        log.debug("Sending %s for scan...", basename)
         report = v.scan(zfile.filename)
-        log.info("File sent.  Report pending: %s", report)
+        log.debug("File sent.  Report pending: %r", report)
         log.info("   Waiting for report...")
         timedelta = time.time() - startscantime
         while not report.done:
@@ -237,21 +250,27 @@ def scan_files(filelist, apikey):
     return reports
 
 def print_report(reports, files):
+    """Check if a report has positive results (as in it found a virus) and print
+    that report."""
     log.info("Printing Reports...\n")
-    zipnum = 0
+    zipnum = 0 # used to cycle through zip file list (files) to link filename to report
+    malwarecount = 0
     for report in reports:
+        filename = os.path.basename(files[zipnum].filename)
         if report.positives == 0:
-            print log.info("No virus found in %s.", files[zipnum].filename)
+            log.info("No virus found in %s.\n", filename)
         else:
-            log.info("\n***VIRUS DETECTED IN %s***\n", files[zipnum])
+            malwarecount += 1          
+            sys.stderr.write("\n***VIRUS DETECTED IN %s***\n", filename)
             for antivirus, malware in report:
                 if malware is not None:
-                    print
-                    log.info("Antivirus:", antivirus[0])
-                    log.info("Antivirus' version:", antivirus[1])
-                    log.info("Antivirus' update:", antivirus[2])
-                    log.info("Malware:", malware)
+                    sys.stderr.write("Antivirus: %r" % antivirus[0])
+                    sys.stderr.write("Antivirus' version: %r" % antivirus[1])
+                    sys.stderr.write("Antivirus' update: %r" % antivirus[2])
+                    sys.stderr.write("Malware: %r" % malware)
         zipnum += 1
+    if malwarecount > 0:
+        sys.exit(2) # system exit 2 means virus was found
 
 def get_build_name(filename):
     """ Retrieve the full version of the installer, eg. Edit-x.y.z-xxxxx"""
@@ -279,18 +298,19 @@ def create_zip(name):
     return contextlib.closing(zipfile.ZipFile(name, "a", mode))
 
 def del_file_path(fileORpath):
+    """delete a file or path.  Used for cleanup when script finishes."""
     try:
         if os.path.isfile(fileORpath):
             os.remove(fileORpath)
-            log.info("Cleaning up %s.", fileORpath)
+            log.debug("Cleaning up %s.", fileORpath)
         else:
             # Have to use ignore_errors = True or else you can't recreate the
             # the install folder after removing it.
             # ref: http://stackoverflow.com/questions/10861403/cant-delete-test-folder-in-windows-7
             shutil.rmtree(fileORpath)
-            log.info("Cleaning up %s.", fileORpath)
+            log.debug("Cleaning up %s.", fileORpath)
     except OSError as e:
-        log.info("Couldn't delete %s: %s", fileORpath, e)
+        log.debug("Couldn't delete %s: %s", fileORpath, e)
 
 if __name__ == '__main__':
     main()
